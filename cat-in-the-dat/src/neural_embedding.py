@@ -11,6 +11,15 @@ from tensorflow.keras import callbacks
 from tensorflow.keras import backend as k
 from tensorflow.keras import utils
 
+
+def auc(y_true, y_pred):
+    def fallback_auc(y_true, y_pred):
+        try:
+            return metrics.roc_auc_score(y_true, y_pred)
+        except:
+            return 0.5
+    return tf.py_function(fallback_auc, (y_true, y_pred), tf.double)
+
 def create_model(data, catcols):
 
     '''
@@ -104,25 +113,33 @@ def run(fold):
 
         df_train= df[df.kfold != fold].reset_index(drop = True)
         df_valid = df[df.kfold ==fold].reset_index(drop = True)
-
+        Xtrain = df_train
+        Xvalid = df_valid
+        Xtrain = Xtrain.reset_index(drop=True)
+        Xvalid = Xvalid.reset_index(drop=True)
+        ytrain, yvalid= Xtrain.target.values, Xvalid.target.values
         model = create_model(df, features)
         #our features are a list of list
-        Xtrain = [df_train[features].values[:,k] for k in range(len(features))]
-        Xvalid = [df_valid[features].values[:,k] for k in range(len(features))]
+        Xtrain = [Xtrain.loc[:, features].values[:, k] for k in range(Xtrain .loc[:, features].values.shape[1])]
+        Xvalid = [Xvalid.loc[:, features].values[:, k] for k in range(Xvalid.loc[:, features].values.shape[1])]
 
-        ytrain = df_train.target.values
-        yvalid = df_train.target.values
 
         #concert target columns to categories
         #this is just binarization
 
-        ytrain_cat = utils.to_categorical(ytrain)
-        yvalid_cat = utils.to_categorical(yvalid)
+        #ytrain_cat = utils.to_categorical(ytrain)
+        #yvalid_cat = utils.to_categorical(yvalid)
 
         #fit the model
 
-        model.fit(Xtrain,ytrain_cat, validation_data = (Xvalid, yvalid_cat), verbose = 1, batch_size =1024, epochs = 3)
-
+        model.fit(Xtrain,
+              utils.to_categorical(ytrain),
+              validation_data=(Xvalid, utils.to_categorical(yvalid)),
+              verbose=1,
+              batch_size=1024,
+              callbacks=[es, rlr],
+              epochs=100
+             )
 
         valid_preds = model.predict(Xvalid)[:,1]
         print(metrics.roc_auc_score(yvalid, valid_preds))
